@@ -1,22 +1,9 @@
 from flask import Flask, request, jsonify
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
-import torch
+from transformers import pipeline
 
 MODEL_ID = "samhitmantrala/smish_fin"
+classifier = pipeline("text-classification", model=MODEL_ID)
 
-# Load tokenizer and model
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
-
-# Apply dynamic quantization (reduces model size & RAM usage)
-model = torch.quantization.quantize_dynamic(
-    model, {torch.nn.Linear}, dtype=torch.qint8
-)
-
-# Create the HuggingFace pipeline using the quantized model
-classifier = pipeline("text-classification", model=model, tokenizer=tokenizer, device=-1)  # device=-1 for CPU
-
-# Flask app
 app = Flask(__name__)
 
 @app.route("/health", methods=["GET"])
@@ -25,6 +12,10 @@ def health():
 
 @app.route("/predict", methods=["POST"])
 def predict():
+    """
+    Expect JSON: { "text": "..." }
+    Returns JSON: { "label": "...", "adjusted_score": value, "raw": [...] }
+    """
     data = request.get_json(force=True, silent=True)
     if not data or "text" not in data:
         return jsonify({"error": "missing 'text' field"}), 400
@@ -37,7 +28,6 @@ def predict():
             label = top.get("label")
             score = float(top.get("score"))
 
-            # Adjust score logic
             if label.upper() == "NEGATIVE":
                 adjusted_score = score
             else:  
